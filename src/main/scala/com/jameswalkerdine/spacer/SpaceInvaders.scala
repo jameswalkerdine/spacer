@@ -1,6 +1,5 @@
 package com.jameswalkerdine.spacer
 
-import com.jameswalkerdine.spacer
 import org.scalajs.dom
 import org.scalajs.dom.ext.KeyCode
 
@@ -8,44 +7,60 @@ import scala.scalajs.js
 import org.scalajs.dom.html.Canvas
 import org.scalajs.dom.raw.HTMLImageElement
 
-import scala.concurrent.Future
-
 case class Position(x: Int, y: Int)
 
 case class Monster(pos: Position)
 
 sealed trait Direction
+
 case object Right extends Direction
+
 case object Left extends Direction
+
 case object Up extends Direction
+
 case object Down extends Direction
 
 sealed trait InvaderShape
-case object Closed extends InvaderShape { def reverse = Open}
-case object Open extends InvaderShape { def reverse = Closed}
 
-abstract class PeriodicallyMoveable()
-{
-  def pos:Position
+case object Closed extends InvaderShape {
+  def reverse = Open
+}
+
+case object Open extends InvaderShape {
+  def reverse = Closed
+}
+
+abstract class PeriodicallyMoveable() {
+  def pos: Position
+
   def direction: Direction
+
   def speed: Int
 }
 
 //case class Missile(pos: Position, direction: Direction, speed: Int, fired: Long = System.currentTimeMillis()) extends PeriodicallyMoveable {
 //}
 
+trait Moves {
+  def pos: Position
 
+  def direction: Direction
+
+  def speed: Int // movement in pixels per second
+  def image: Image
+}
 
 case class Movable(
-                 pos: Position,
-                 direction: Direction,
-                 shape: InvaderShape,
-                 speed: Int = 256, // movement in pixels per second
-                 fired: Long = System.currentTimeMillis(),
-                 image: Image
-               ) extends PeriodicallyMoveable {
+                    pos: Position,
+                    direction: Direction,
 
-  def move() : Movable = {
+                    fired: Long = System.currentTimeMillis(),
+                    image: Image,
+                    speed: Int
+                  ) extends Moves {
+
+  def move(): Movable = {
     direction match {
       case Up => this.copy(pos = Position(pos.x, pos.y + speed))
       case Down => this.copy(pos = Position(pos.x, pos.y - speed))
@@ -55,39 +70,65 @@ case class Movable(
   }
 }
 
-
-
-
-
-
-case class GunTurret(
-                    pos : Position
-                    )
-
-object Movable {
-  val size = 20
+object Invader {
+  def apply(pos: Position,
+            direction: Direction,
+            shape: InvaderShape,
+            fired: Long = System.currentTimeMillis(),
+            image: Image,
+            speed: Int): Invader = {
+    new Invader(pos,
+      direction,
+      shape,
+      fired,
+      image: Image,
+      speed: Int)
+  }
 }
+
+class Invader(
+               override val pos: Position,
+               override val direction: Direction,
+               val shape: InvaderShape,
+               override val fired: Long = System.currentTimeMillis(),
+               override val image: Image,
+               override val speed: Int
+             ) extends Movable(pos, direction, fired, image, speed) {
+
+
+  def copy2(pos: Position = pos,
+            direction: Direction = direction,
+            shape: InvaderShape = shape,
+            fired: Long = fired,
+            image: Image = image,
+            speed: Int = speed): Invader = {
+
+    Invader(pos, direction, shape, fired, image, speed)
+  }
+}
+
 
 class Image(src: String) {
   private var ready: Boolean = false
   val element = dom.document.createElement("img").asInstanceOf[HTMLImageElement]
   element.onload = (e: dom.Event) => ready = true
   element.src = src
+
   def isReady: Boolean = ready
 }
 
-object SimpleCanvasGame{
+object SimpleCanvasGame {
 
   def main(args: Array[String]): Unit = {
     initGame
   }
 
-  def isValidPosition(pos: Position, canvas: Canvas): Boolean = {
-    0 <= pos.x && (pos.x + Movable.size) <= canvas.width && 0 <= pos.y && (pos.y + Movable.size) <= canvas.height
-  }
+  //  def isValidPosition(pos: Position, canvas: Canvas): Boolean = {
+  //    0 <= pos.x && (pos.x + Movable.size) <= canvas.width && 0 <= pos.y && (pos.y + Movable.size) <= canvas.height
+  //  }
 
-  def areTouching(posA: Position, posB: Position): Boolean = {
-    posA.x <= (posB.x + Movable.size) && posB.x <= (posA.x + Movable.size) && posA.y <= (posB.y + Movable.size) && posB.y <= (posA.y + Movable.size)
+  def areTouching(m1: Movable, m2: Movable): Boolean = {
+    m1.pos.x <= (m2.pos.x + m2.image.element.width) && m2.pos.x <= (m1.pos.x + m1.image.element.width) && m1.pos.y <= (m2.pos.y + m2.image.element.height) && m2.pos.y <= (m1.pos.y + m1.image.element.height)
   }
 
   def initGame(): Unit = {
@@ -99,26 +140,32 @@ object SimpleCanvasGame{
     canvas.height = (0.80 * dom.window.innerHeight).toInt
     dom.document.body.appendChild(canvas)
 
-    val bgImage = new Image("spacer/images/background.png")
+    val bgImage = new Image("spacer/images/nasa.jpg")
     val closedInvader = new Image("spacer/images/closed_si.png")
     val openInvader = new Image("spacer/images/open_si.png")
     val gunTurretImage = new Image("spacer/images/gun_turret.png")
     val missileImage = new Image("spacer/images/missile.png")
 
+    //missileImage.element.width
+
 
     var missiles = Vector[Movable]()
+    var invaderMissiles = Seq[Movable]()
 
     var spaceInvaders = {
-      for{ colunms <- 1 to 10
+      for {colunms <- 1 to 10
            rows <- 1 to 5
-          xPosition = colunms * 65
-          yPosition = rows * 50
-      } yield Movable(pos = Position(xPosition, yPosition),shape = Closed, direction = Left, speed = 1, image = closedInvader)
+           xPosition = colunms * 65
+           yPosition = rows * 50
+      } yield Invader(speed = 1, pos = Position(xPosition, yPosition), shape = Closed, direction = Left, image = closedInvader)
     }
-    var gunTurret = GunTurret(Position((canvas.width * 0.1).toInt, (canvas.height *.90).toInt))
-    var mainInvasionPartyDirection : Direction = Right
+    var gunTurret = Movable(pos = Position((canvas.width * 0.1).toInt, (canvas.height * .90).toInt), direction = Left, image = gunTurretImage, speed = 1)
+
+
+    var mainInvasionPartyDirection: Direction = Right
 
     var score = 0
+    var lives = 3
 
     // Handle keyboard controls
     import scala.collection.mutable.HashMap
@@ -138,9 +185,20 @@ object SimpleCanvasGame{
 
     }
 
+    def gameOver(): Unit = {
+      // Score
+      ctx.fillStyle = "rgb(250, 250, 250)"
+      ctx.font = "52px Helvetica"
+      ctx.textAlign = "centre"
+      ctx.textBaseline = "centre"
+      ctx.fillText("Game Over, play again (y)", 400, 300)
+    }
+
+    def isGameOver: Boolean = if(lives <= 0) true else false
+
     // Update game objects
     def update(modifier: Double) {
-      val newSpaceInvaders = spaceInvaders.map( spaceInvader => {
+      val newSpaceInvaders = spaceInvaders.map(spaceInvader => {
         val modif = (spaceInvader.speed * modifier).toInt
         var Position(x, y) = spaceInvader.pos
         if (keysDown.contains(KeyCode.Left)) x -= modif
@@ -148,42 +206,53 @@ object SimpleCanvasGame{
         if (keysDown.contains(KeyCode.Up)) y -= modif
         if (keysDown.contains(KeyCode.Down)) y += modif
         val newPos = Position(x, y)
-        spaceInvader.copy(pos = newPos)
+        spaceInvader.copy2(pos = newPos)
       })
       spaceInvaders = newSpaceInvaders
-
 
 
     }
 
     def maybeChangeDirection: Int = {
       mainInvasionPartyDirection match {
-        case Right if spaceInvaders.maxBy(spaceInvader => spaceInvader.pos.x).pos.x > canvas.width => {
+        case Right if spaceInvaders.maxBy(spaceInvader => spaceInvader.pos.x).pos.x > canvas.width - 100 => {
           mainInvasionPartyDirection = Left
-          10
+          30
         }
         case Left if spaceInvaders.minBy(spaceInvader => spaceInvader.pos.x).pos.x < 0 => {
           mainInvasionPartyDirection = Right
-          10
+          30
         }
         case _ => 0
       }
     }
 
 
-    def periodicInvasionForceMove(downMove : Int) = {
-      val newSpaceInvaders = spaceInvaders.map( spaceInvader => {
-        val modif = (10).toInt
+    def adjustInvadersSpeeds() = {
+
+
+      // 1 for 50 to 10 for 1
+      var newSpeed = 51 - (spaceInvaders.size /2)
+
+      val ni = for {
+        spaceInvader <- spaceInvaders
+
+
+      } yield (spaceInvader.copy2(speed = newSpeed))
+      spaceInvaders = ni
+    }
+
+
+    def periodicInvasionForceMove(downMove: Int) = {
+      val newSpaceInvaders = spaceInvaders.map(spaceInvader => {
         var Position(x, y) = spaceInvader.pos
 
         mainInvasionPartyDirection match {
-          case Right => x += modif
-          case Left => x -= modif
+          case Right => x += spaceInvader.speed
+          case Left => x -= spaceInvader.speed
         }
         y += downMove
         //        if (mainInvasionPartyDirection == Right.contains(KeyCode.Left)) x -= modif
-
-
 
 
         //        if (keysDown.contains(KeyCode.Up)) y -= modif
@@ -193,46 +262,55 @@ object SimpleCanvasGame{
         //if (isValidPosition(newPos, canvas)) {
         //  spaceInvader = spaceInvader.copy(pos = newPos)
         //}
-        spaceInvader.copy(pos = newPos, shape = if (spaceInvader.shape == Closed) Open else Closed)
+        spaceInvader.copy2(pos = newPos, shape = if (spaceInvader.shape == Closed) Open else Closed)
       }
-        )
+      )
       spaceInvaders = newSpaceInvaders
     }
 
 
-    def moveGunTurret()  = {
-      val gunTurretNewPos = if (keysDown.contains(KeyCode.Right)) gunTurret.copy(pos = Position(gunTurret.pos.x + 1, gunTurret.pos.y)) else
-      if (keysDown.contains(KeyCode.Left)) gunTurret.copy(pos = Position(gunTurret.pos.x -1 , gunTurret.pos.y)) else
+    def moveGunTurret() = {
+      val gunTurretNewPos = if (keysDown.contains(KeyCode.Right) && gunTurret.pos.x < (canvas.width - gunTurret.image.element.width)) gunTurret.copy(pos = Position(gunTurret.pos.x + 1, gunTurret.pos.y)) else if (keysDown.contains(KeyCode.Left) && gunTurret.pos.x > 0) gunTurret.copy(pos = Position(gunTurret.pos.x - 1, gunTurret.pos.y)) else
         gunTurret
       gunTurret = gunTurretNewPos
     }
-
 
 
     def checkMissiles() = {
       val toRemove = for {
         spaceInvader <- spaceInvaders
         missile <- missiles
-        if(areTouching(missile.pos, spaceInvader.pos))
-      }  yield (spaceInvader, missile)
+        if (areTouching(missile, spaceInvader))
+      } yield (spaceInvader, missile)
+
+
+      val toRemoveE = for {
+        missile <- missiles
+        if (missile.pos.y < 10)
+      } yield missile
+
 
       val ir = toRemove.map(_._1).toSet
       val mr = toRemove.map(_._2).toSet
 
+
+      score = score + (ir.size * 100)
       //spaceInvaders = spaceInvaders.filter(ir.contains(_))
       //missiles = missiles.filter(mr.contains(_))
 
       val itokeep = for {
         si <- spaceInvaders
-        if( !ir.contains(si))
+        if (!ir.contains(si))
       } yield si
 
+
       spaceInvaders = itokeep
+      adjustInvadersSpeeds
 
 
       val mtokeep = for {
         m <- missiles
-        if( !mr.contains(m))
+        if (!mr.contains(m) && (!toRemoveE.contains(m)))
       } yield m
 
       missiles = mtokeep
@@ -240,18 +318,67 @@ object SimpleCanvasGame{
     }
 
 
+    def checkInvaderMissiles() = {
+      val toRemove = for {
+        missile <- invaderMissiles
+        if (areTouching(missile, gunTurret))
+      } yield gunTurret
+
+      if (toRemove.size > 0) {
+        // oops you die
+        lives = lives - 1
+        if (lives <= 0) {
+          gameOver()
+        }
+        gunTurret = Movable(speed = 1, pos = Position((canvas.width * 0.1).toInt, (canvas.height * .90).toInt), direction = Left, image = gunTurretImage)
+
+      }
+
+
+    }
+
+
+    def continueGame(): Unit = {
+      missiles = Vector[Movable]()
+      invaderMissiles = Seq[Movable]()
+
+      spaceInvaders = {
+        for {colunms <- 1 to 10
+             rows <- 1 to 5
+             xPosition = colunms * 65
+             yPosition = rows * 50
+        } yield Invader(pos = Position(xPosition, yPosition), shape = Closed, direction = Left, speed = 2, image = closedInvader)
+      }
+    }
+
     def fireMissle() = {
 
 
-      if(keysDown.contains(KeyCode.Space)) {
+      if (keysDown.contains(KeyCode.Space)) {
         //let gun cool down
         val now = System.currentTimeMillis()
-        val tm = missiles.foldLeft(1001L)((r,c) => if(now - c.fired < r) now - c.fired else r)
-        if( tm > 200 ) {
-          val missile = Movable(Position(gunTurret.pos.x+37, gunTurret.pos.y - 25),shape = Closed, image = missileImage, direction = Up, speed = -1)
+        //val tm = missiles.foldLeft(1001L)((r, c) => if (now - c.fired < r) now - c.fired else r)
+        // if (tm > 200) {
+        if (missiles.size < 4) {
+          val missile = Movable(Position(gunTurret.pos.x + 37, gunTurret.pos.y - 25), image = missileImage, direction = Up, speed = -3)
           missiles = missiles :+ missile
         }
       }
+    }
+
+
+    def fireInvaderMissiles(existingMissiles: Seq[Movable], invaders: Seq[Movable]): Seq[Movable] = {
+      val rnd = new scala.util.Random
+      // find lowest invaders
+      val lowest = invaders.foldLeft(0)((low: Int, invader: Movable) => if (invader.pos.y > low) invader.pos.y else low)
+
+      val newMissiles = for {
+        invader <- invaders
+       // if (invader.pos.y == lowest && rnd.nextInt(100) > ( 60 - (40 - invaders.size)))
+        if (invader.pos.y == lowest && rnd.nextInt(100) > ( 94 - (40 - invaders.size)))
+      } yield Movable(Position(invader.pos.x + 37, invader.pos.y + 25), image = missileImage, direction = Down, speed = -2)
+
+      existingMissiles ++ newMissiles
     }
 
     // Draw everything
@@ -261,7 +388,7 @@ object SimpleCanvasGame{
       }
       if (closedInvader.isReady && openInvader.isReady) {
         spaceInvaders.foreach(spaceInvader =>
-        ctx.drawImage(spaceInvader.shape match { case Closed => closedInvader.element case Open => openInvader.element }, spaceInvader.pos.x, spaceInvader.pos.y))
+          ctx.drawImage(spaceInvader.shape match { case Closed => closedInvader.element case Open => openInvader.element }, spaceInvader.pos.x, spaceInvader.pos.y))
       }
       if (gunTurretImage.isReady) {
         ctx.drawImage(gunTurretImage.element, gunTurret.pos.x, gunTurret.pos.y)
@@ -269,12 +396,19 @@ object SimpleCanvasGame{
 
       if (missileImage.isReady) missiles.foreach(missile => ctx.drawImage(missileImage.element, missile.pos.x, missile.pos.y))
 
-        // Score
+      if (missileImage.isReady) invaderMissiles.foreach(missile => ctx.drawImage(missileImage.element, missile.pos.x, missile.pos.y))
+
+
+      // Score
       ctx.fillStyle = "rgb(250, 250, 250)"
       ctx.font = "24px Helvetica"
       ctx.textAlign = "left"
       ctx.textBaseline = "top"
-      ctx.fillText("Score: " + score, 32, 32)
+      ctx.fillText(s"Score: $score lives: $lives", 32, 32)
+
+      if( isGameOver) {
+        gameOver()
+      }
     }
 
     var prev = js.Date.now()
@@ -285,23 +419,44 @@ object SimpleCanvasGame{
     // The main game loop
     val gameLoop = () => {
       val now = js.Date.now()
+      if (!isGameOver) {
+        if (now - lastMainForceMove > 200) {
+          val downMove = maybeChangeDirection
+          periodicInvasionForceMove(downMove)
+          lastMainForceMove = now
+          invaderMissiles = fireInvaderMissiles(invaderMissiles, invaders = spaceInvaders)
+        }
 
-      if(now - lastMainForceMove > 200) {
-        val downMove = maybeChangeDirection
-        periodicInvasionForceMove(downMove)
-        lastMainForceMove = now
-      }
 
-      if(now - lastMissileMove > 10) {
-        missiles = missiles.map(m => m.move())
-        lastMissileMove = now
         checkMissiles()
+        checkInvaderMissiles()
+        if (spaceInvaders.size == 0) {
+          continueGame()
+          render()
+        }
+
+
+        if (now - lastMissileMove > 5) {
+          missiles = missiles.map(m => m.move())
+          invaderMissiles = invaderMissiles.map(_.move())
+          lastMissileMove = now
+
+        }
+
+        //update(delta / 1000)
+        //spaceInvaders.map(spaceInvader => spaceInvader.copy(shape = spaceInvader.shape.reverse))
+        moveGunTurret()
+        fireMissle()
+      } else {
+        if (keysDown.contains(KeyCode.Y)) {
+          continueGame()
+          lives = 3
+          render()
+        }
       }
 
-      //update(delta / 1000)
-      //spaceInvaders.map(spaceInvader => spaceInvader.copy(shape = spaceInvader.shape.reverse))
-      moveGunTurret()
-      fireMissle()
+
+
       render()
 
       prev = now
@@ -311,8 +466,9 @@ object SimpleCanvasGame{
     reset()
 
     dom.window.setInterval(gameLoop, 1) // Execute as fast as possible
-  }
 
+
+  }
 
 
 }
